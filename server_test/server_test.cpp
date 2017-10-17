@@ -4,11 +4,11 @@ int main(void)
 {
 	KcpConnectionManager connection_manager;
 
-	connection_manager.listen(40960);
+	connection_manager.listenWithKqueue(40960);
 
 	while(1)
 	{
-		connection_manager.tick();
+		connection_manager.tickWithKqueue();
 	}
 
 	return 0;
