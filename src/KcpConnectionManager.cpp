@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <event2/event.h>
 #include "../include/KcpConnectionManager.h"
 
 KcpConnectionManager::KcpConnectionManager()
@@ -261,7 +262,7 @@ void KcpConnectionManager::tickWithKqueue()
 
             sprintf(szAddr, "%d.%d.%d.%d", *p, *(p+1), *(p+2), *(p+3));
 
-            printf("fd %d, receive %s from ip %s\n",fd, m_receive_buff, str);
+            printf("fd %d, receive %s from ip %s, port %d\n",fd, m_receive_buff, str, peer_addr.sin_port);
 
         }
         else if (events == EVFILT_WRITE)
@@ -273,6 +274,72 @@ void KcpConnectionManager::tickWithKqueue()
             printf("unknown event.");
         }
     }
+}
+
+void cb_function(evutil_socket_t fd, short what, void *arg)
+{
+    struct sockaddr_in peer_addr;
+    socklen_t peer_len;
+    int receive_data_size;
+    char addr[16];
+    const char* str = NULL;
+    char szAddr[256];
+
+    KcpConnectionManager* kcp_connection_manager = (KcpConnectionManager*) arg;
+
+    peer_len = sizeof(peer_addr);
+
+    if( (what&EV_READ))
+    {
+        memset(kcp_connection_manager->m_receive_buff, 0, sizeof(kcp_connection_manager->m_receive_buff));
+
+        if ( (receive_data_size = recvfrom(fd, kcp_connection_manager->m_receive_buff, sizeof(kcp_connection_manager->m_receive_buff), 0, (struct sockaddr*)&peer_addr, &peer_len)) < 0)
+        {
+            /* code */
+        }
+        else if (receive_data_size == 0)
+        {
+            /* code */
+        }
+
+        str = inet_ntop(AF_INET, (void*)&peer_addr.sin_addr, addr, 16);
+
+        char* p = (char*)&peer_addr.sin_addr;
+
+        sprintf(szAddr, "%d.%d.%d.%d", *p, *(p+1), *(p+2), *(p+3));
+
+        printf("fd %d, receive %s from ip %s, port %d\n",fd, kcp_connection_manager->m_receive_buff, str, peer_addr.sin_port);
+    }
+}
+
+void KcpConnectionManager::listenWithLibevent(unsigned short listening_port)
+{
+    struct sockaddr_in servaddr;
+    struct event* listening_event;
+
+    if(m_listening_socket >  0)
+         close(m_listening_socket);
+
+    if((m_listening_socket = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+         ERR_EXIT("socket error");
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(listening_port);
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if(bind(m_listening_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+        ERR_EXIT("bind error");
+
+    printf("Start listening at port %d\r\n", listening_port);
+
+    m_event_base = event_base_new();
+    listening_event = event_new(m_event_base, m_listening_socket, EV_READ | EV_ET | EV_PERSIST, cb_function, this);
+    event_add(listening_event, NULL);
+}
+
+void KcpConnectionManager::eventMainLoop()
+{
+    event_base_dispatch(m_event_base);
 }
 
 
